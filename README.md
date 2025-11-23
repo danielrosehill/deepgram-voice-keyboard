@@ -6,6 +6,22 @@ A voice-controlled Linux virtual keyboard that converts speech to text and types
 
 As a result of directly targeting Linux as a driver, this works with all Linux applications.
 
+## GUI Available!
+
+A graphical user interface is now available for easy control of voice dictation! See [GUI_README.md](GUI_README.md) for details.
+
+Features:
+- Store your Deepgram API key persistently
+- Toggle dictation with a hotkey (default: F13)
+- Visual status indicators
+- Audible beeps for start/stop feedback
+
+Quick start:
+```bash
+cargo build --release
+./target/release/voice-keyboard-gui
+```
+
 ## Features
 
 - **Voice-to-Text**: Real-time speech recognition using Deepgram's **Flux** API service (turn-taking STT)
