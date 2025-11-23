@@ -18,13 +18,6 @@ Features:
 
 Quick start:
 ```bash
-./install.sh
-voice-keyboard-gui
-```
-
-Or for development:
-```bash
-cd app
 cargo build --release
 ./target/release/voice-keyboard-gui
 ```
@@ -45,34 +38,24 @@ The application solves a common Linux privilege problem:
 
 ## Installation
 
-### Quick Install (Recommended)
-
-```bash
-git clone <repository-url>
-cd voice-keyboard-linux
-./install.sh
-```
-
-This will build and install the Debian package on your system. See [INSTALL.md](INSTALL.md) for detailed installation instructions.
-
 ### Prerequisites
 
 ```bash
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://rustup.rs | sh
 
-# Install required system packages (Ubuntu/Debian)
-sudo apt install libasound2-dev
-
 # Install required system packages (Fedora/RHEL)
 sudo dnf install alsa-lib-devel
+
+# Install required system packages (Ubuntu/Debian)
+sudo apt install libasound2-dev
 ```
 
-### Manual Build (Development)
+### Build
 
 ```bash
 git clone <repository-url>
-cd voice-keyboard-linux/app
+cd voice-keyboard
 cargo build
 ```
 

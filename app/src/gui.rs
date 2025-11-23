@@ -15,10 +15,11 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tray_icon::{
-    menu::{Menu, MenuItem},
-    TrayIcon, TrayIconBuilder,
-};
+// Tray icon disabled - requires GTK which is incompatible with KDE/Wayland
+// use tray_icon::{
+//     menu::{Menu, MenuItem},
+//     TrayIcon, TrayIconBuilder,
+// };
 use reqwest::Client;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +104,7 @@ struct VoiceKeyboardGui {
     _hotkey_manager: GlobalHotKeyManager,
     _audio_output_stream: OutputStream,
     audio_sink: Arc<Mutex<Sink>>,
-    _tray_icon: Option<TrayIcon>,
+    // _tray_icon: Option<TrayIcon>,  // Disabled for KDE compatibility
     http_client: Client,
 }
 
@@ -125,18 +126,8 @@ impl VoiceKeyboardGui {
         let hotkey = HotKey::new(None, Code::F13);
         hotkey_manager.register(hotkey).ok();
 
-        // Initialize system tray
-        let tray_menu = Menu::new();
-        let show_item = MenuItem::new("Show Window", true, None);
-        let quit_item = MenuItem::new("Quit", true, None);
-        tray_menu.append(&show_item).ok();
-        tray_menu.append(&quit_item).ok();
-
-        let tray_icon = TrayIconBuilder::new()
-            .with_menu(Box::new(tray_menu))
-            .with_tooltip("Voice Keyboard")
-            .build()
-            .ok();
+        // System tray disabled for KDE/Wayland compatibility
+        // The tray-icon crate requires GTK initialization which conflicts with KDE
 
         let gui = Self {
             config,
@@ -150,7 +141,7 @@ impl VoiceKeyboardGui {
             _hotkey_manager: hotkey_manager,
             _audio_output_stream: stream,
             audio_sink: Arc::new(Mutex::new(sink)),
-            _tray_icon: tray_icon,
+            // _tray_icon: tray_icon,  // Disabled for KDE compatibility
             http_client: Client::new(),
         };
 

@@ -35,7 +35,7 @@ iced = "0.13"
 directories = "5.0"
 global-hotkey = "0.6"
 rodio = "0.19"
-tray-icon = "0.19"
+# tray-icon = "0.19"  # Disabled - requires GTK on Linux, incompatible with KDE/Wayland
 reqwest = { version = "0.12", features = ["json"] }
 
 [profile.release]

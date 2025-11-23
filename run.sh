@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
-# Voice Keyboard Runner Script
-# This script runs the voice-keyboard with proper privilege handling
+# Voice Keyboard Runner Script (Development Mode)
+# This script runs the voice-keyboard from source with proper privilege handling
 #
 # Usage examples:
 #   ./run.sh --test-audio              # Test audio input
 #   ./run.sh --test-stt                # Test STT with typing
 #   ./run.sh --debug-stt               # Debug STT (print only)
 #   ./run.sh --debug-stt --stt-url ... # Debug with custom URL
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$SCRIPT_DIR/app"
 
 # Check if we're already running as root
 if [ "$EUID" -eq 0 ]; then
@@ -17,6 +20,7 @@ fi
 
 # Build the project first
 echo "Building voice-keyboard..."
+cd "$APP_DIR"
 cargo build
 
 if [ $? -ne 0 ]; then
@@ -29,5 +33,5 @@ echo "Starting voice-keyboard with privilege dropping..."
 echo "Note: This will create a virtual keyboard as root, then drop privileges for audio access."
 echo ""
 
-sudo -E ./target/debug/voice-keyboard "$@"
+sudo -E "$APP_DIR/target/debug/voice-keyboard" "$@"
 
