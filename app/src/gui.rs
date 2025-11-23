@@ -108,6 +108,27 @@ struct VoiceKeyboardGui {
     http_client: Client,
 }
 
+impl Drop for VoiceKeyboardGui {
+    fn drop(&mut self) {
+        // Ensure child process is terminated when GUI is closed
+        if let Some(mut child) = self.voice_keyboard_process.lock().unwrap().take() {
+            let _ = child.kill();
+            // Wait up to 1 second for clean shutdown
+            let start = std::time::Instant::now();
+            while start.elapsed() < Duration::from_secs(1) {
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                    Err(_) => break,
+                }
+            }
+            // Force kill if still running
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 impl VoiceKeyboardGui {
     fn new() -> (Self, Task<Message>) {
         let config = Config::load().unwrap_or_default();
@@ -166,7 +187,20 @@ impl VoiceKeyboardGui {
                         }
 
                         if let Some(mut child) = process_lock.take() {
+                            // Send SIGTERM first for graceful shutdown
                             let _ = child.kill();
+                            // Wait up to 2 seconds for process to terminate
+                            let start = std::time::Instant::now();
+                            while start.elapsed() < Duration::from_secs(2) {
+                                match child.try_wait() {
+                                    Ok(Some(_)) => break, // Process exited
+                                    Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                                    Err(_) => break,
+                                }
+                            }
+                            // Force kill if still running
+                            let _ = child.kill();
+                            let _ = child.wait();
                         }
                     } else {
                         // Start recording - play distinctive double beep
@@ -324,7 +358,20 @@ impl VoiceKeyboardGui {
         self.play_beep(400.0);
 
         if let Some(mut child) = self.voice_keyboard_process.lock().unwrap().take() {
+            // Send SIGTERM first for graceful shutdown
             let _ = child.kill();
+            // Wait up to 2 seconds for process to terminate
+            let start = std::time::Instant::now();
+            while start.elapsed() < Duration::from_secs(2) {
+                match child.try_wait() {
+                    Ok(Some(_)) => break, // Process exited
+                    Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                    Err(_) => break,
+                }
+            }
+            // Force kill if still running
+            let _ = child.kill();
+            let _ = child.wait();
             self.is_recording = false;
             self.status_message = "Stopped".to_string();
         }
