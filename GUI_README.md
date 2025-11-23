@@ -6,19 +6,26 @@ A graphical user interface for the Voice Keyboard application that makes it easy
 
 - **API Key Management**: Securely store your Deepgram API key in a persistent configuration file
 - **Global Hotkey**: Toggle dictation on/off using a customizable hotkey (defaults to F13)
-- **Audio Feedback**: Audible beeps when starting (high pitch) and stopping (low pitch) dictation
+- **Audio Feedback**: Audible beeps when starting and stopping dictation
+  - **Start**: Distinctive double beep (bright, high pitch)
+  - **Stop**: Single lower pitch beep
 - **Visual Feedback**: Clean interface showing current status and recording state
 - **One-Click Control**: Start and stop dictation with a single button click
 
-## Installation & Building
+## Installation
+
+### From Debian Package
 
 ```bash
-# Build both the GUI and the voice-keyboard binary
-cargo build --release
+sudo dpkg -i voice-keyboard_0.1.0-1_amd64.deb
+```
 
-# The binaries will be available at:
-# ./target/release/voice-keyboard-gui  (GUI application)
-# ./target/release/voice-keyboard      (Core voice keyboard)
+### From Source
+
+```bash
+cargo build --release
+sudo cp target/release/voice-keyboard-gui /usr/bin/
+sudo cp target/release/voice-keyboard /usr/bin/
 ```
 
 ## Usage
@@ -27,8 +34,9 @@ cargo build --release
 
 1. **Launch the GUI**:
    ```bash
-   ./target/release/voice-keyboard-gui
+   voice-keyboard-gui
    ```
+   Or find "Voice Keyboard GUI" in your application menu (Utility → Accessibility)
 
 2. **Configure Your API Key**:
    - Enter your Deepgram API key in the "Deepgram API Key" field
@@ -37,7 +45,6 @@ cargo build --release
 3. **Set Your Hotkey** (Optional):
    - The default hotkey is F13
    - You can change it to any key (e.g., F13, F14, etc.)
-   - Note: Global hotkey functionality requires the specified key to be available on your keyboard
 
 4. **Save Configuration**:
    - Click "Save Configuration" to persist your settings
@@ -47,23 +54,37 @@ cargo build --release
 
 **Method 1: Use the GUI Button**
 - Click the green "Start Dictation" button
-- You'll hear a high-pitched beep indicating dictation has started
+- You'll hear a distinctive double beep (high-pitched) indicating dictation has started
 - The button will turn red and say "Stop Dictation"
 
 **Method 2: Use the Hotkey**
 - Press your configured hotkey (default: F13)
-- You'll hear the same high-pitched beep
+- You'll hear the same double beep
 - Works even when the GUI is minimized or in the background
 
 ### Stopping Dictation
 
 **Method 1: Use the GUI Button**
 - Click the red "Stop Dictation" button
-- You'll hear a low-pitched beep indicating dictation has stopped
+- You'll hear a single low-pitched beep indicating dictation has stopped
 
 **Method 2: Use the Hotkey**
 - Press your configured hotkey again (default: F13)
-- You'll hear the same low-pitched beep
+- You'll hear the same low beep
+
+## Audio Feedback
+
+The GUI provides clear audio cues:
+
+- **Start Recording**: Double beep pattern
+  - First beep: 1000 Hz (80ms)
+  - Short pause: 50ms
+  - Second beep: 1200 Hz (80ms) - brighter tone
+
+- **Stop Recording**: Single beep
+  - 400 Hz (100ms) - lower, calmer tone
+
+This makes it easy to know the current state without looking at the screen.
 
 ## Configuration File
 
@@ -78,11 +99,16 @@ Example configuration:
 }
 ```
 
+**Security Note**: The API key is stored in plain text. Protect this file:
+```bash
+chmod 600 ~/.config/deepgram/voice-keyboard/config.json
+```
+
 ## Permissions
 
 The voice keyboard requires root privileges to create the virtual keyboard device. When you start dictation, you'll be prompted for your password via `pkexec` (PolicyKit).
 
-This is a one-time prompt per dictation session and is required because:
+This is required because:
 - The virtual keyboard needs to create a `/dev/uinput` device
 - This requires root access for security reasons
 - After creating the device, privileges are dropped to access your audio system
@@ -92,7 +118,7 @@ This is a one-time prompt per dictation session and is required because:
 ### "Failed to start" Error
 
 1. **Check your API key**: Ensure your Deepgram API key is correct and saved
-2. **Verify permissions**: Make sure you have `pkexec` installed (usually comes with PolicyKit)
+2. **Verify permissions**: Make sure you have `pkexec` installed
 3. **Test the core binary**: Try running the voice-keyboard directly:
    ```bash
    export DEEPGRAM_API_KEY="your-key-here"
@@ -102,13 +128,22 @@ This is a one-time prompt per dictation session and is required because:
 ### No Sound / Beeps Not Working
 
 1. **Check audio output**: Ensure your system audio is working and not muted
-2. **Volume levels**: The beeps play at 30% volume - increase system volume if needed
+2. **Volume levels**: The beeps play at 30-35% volume - increase system volume if needed
+3. **Audio system**: Make sure PipeWire or PulseAudio is running
 
 ### Hotkey Not Working
 
 1. **Key availability**: Ensure your keyboard has the configured key (e.g., F13)
 2. **Key conflicts**: Check if another application is using the same hotkey
 3. **Try a different key**: Some keys may not be available as global hotkeys
+4. **Permissions**: Some desktop environments require special permissions for global hotkeys
+
+### No Text Appearing
+
+1. **Check microphone**: Ensure your microphone is working and selected correctly
+2. **Test audio input**: Run `voice-keyboard --test-audio` to verify microphone levels
+3. **Deepgram API**: Verify your API key is valid and has credits
+4. **Focus**: Make sure the target application is focused and accepts text input
 
 ### Build Errors
 
@@ -137,18 +172,26 @@ cargo build --release
 - **Configuration Storage**: serde + JSON
 - **Platform**: Linux (tested on Ubuntu with KDE Plasma/Wayland)
 
-## Security Notes
+## Command Line Interface
 
-- API keys are stored in plain text in your config file
-- The config directory is created with user-only permissions
-- Consider restricting permissions on the config file:
-  ```bash
-  chmod 600 ~/.config/deepgram/voice-keyboard/config.json
-  ```
+The core `voice-keyboard` binary also supports command-line options:
+
+```bash
+voice-keyboard [OPTIONS]
+
+OPTIONS:
+    --test-audio        Test audio input and show levels
+    --test-stt          Test speech-to-text functionality (default)
+    --debug-stt         Debug speech-to-text (print transcripts without typing)
+    --stt-url <URL>     Custom STT service URL
+    --voice-enter       Interpret "enter" at end-of-turn as Enter key
+    --uppercase         Convert all typed text to uppercase
+```
 
 ## Contributing
 
-This is a demonstration application for Deepgram's Flux API. For issues or improvements, please check the main project repository.
+This is a demonstration application for Deepgram's Flux API. For issues or improvements, please check the project repository:
+https://github.com/danielrosehill/deepgram-voice-keyboard
 
 ## License
 

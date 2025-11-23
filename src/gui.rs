@@ -131,12 +131,22 @@ impl VoiceKeyboardGui {
                             let _ = child.kill();
                         }
                     } else {
-                        // Start recording - play higher beep
+                        // Start recording - play distinctive double beep
                         if let Ok(sink) = audio_sink_clone.lock() {
-                            let source = SineWave::new(800.0)
-                                .take_duration(Duration::from_millis(100))
-                                .amplify(0.3);
-                            sink.append(source);
+                            // First beep - high pitch
+                            let beep1 = SineWave::new(1000.0)
+                                .take_duration(Duration::from_millis(80))
+                                .amplify(0.35);
+                            sink.append(beep1);
+
+                            // Short pause
+                            std::thread::sleep(Duration::from_millis(50));
+
+                            // Second beep - even higher pitch for brightness
+                            let beep2 = SineWave::new(1200.0)
+                                .take_duration(Duration::from_millis(80))
+                                .amplify(0.35);
+                            sink.append(beep2);
                         }
 
                         // Start the voice keyboard process
@@ -169,12 +179,32 @@ impl VoiceKeyboardGui {
         }
     }
 
+    fn play_start_beep(&self) {
+        // Double beep for starting - bright and distinctive
+        if let Ok(sink) = self.audio_sink.lock() {
+            // First beep - high pitch
+            let beep1 = SineWave::new(1000.0)
+                .take_duration(Duration::from_millis(80))
+                .amplify(0.35);
+            sink.append(beep1);
+
+            // Short pause
+            std::thread::sleep(Duration::from_millis(50));
+
+            // Second beep - even higher pitch for brightness
+            let beep2 = SineWave::new(1200.0)
+                .take_duration(Duration::from_millis(80))
+                .amplify(0.35);
+            sink.append(beep2);
+        }
+    }
+
     fn start_dictation(&mut self) {
         // Set the API key environment variable
         std::env::set_var("DEEPGRAM_API_KEY", &self.config.api_key);
 
-        // Play start beep (higher pitch)
-        self.play_beep(800.0);
+        // Play distinctive double beep for start
+        self.play_start_beep();
 
         // Get the path to the voice-keyboard binary
         let exe_path = std::env::current_exe()
