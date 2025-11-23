@@ -6,7 +6,7 @@ use global_hotkey::{
 };
 use iced::{
     widget::{button, column, container, text, text_input},
-    Element, Length, Task, Theme,
+    window, Element, Length, Task, Theme,
 };
 use rodio::{source::SineWave, OutputStream, Sink, Source};
 use serde::{Deserialize, Serialize};
@@ -15,11 +15,29 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tray_icon::{
+    menu::{Menu, MenuItem},
+    TrayIcon, TrayIconBuilder,
+};
+use reqwest::Client;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Config {
     api_key: String,
     hotkey_code: String,
+    project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BillingBalance {
+    balance_id: String,
+    amount: f64,
+    units: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BillingResponse {
+    balances: Vec<BillingBalance>,
 }
 
 impl Default for Config {
@@ -27,6 +45,7 @@ impl Default for Config {
         Self {
             api_key: String::new(),
             hotkey_code: "F13".to_string(),
+            project_id: String::new(),
         }
     }
 }
@@ -62,20 +81,30 @@ impl Config {
 enum Message {
     ApiKeyChanged(String),
     HotkeyChanged(String),
+    ProjectIdChanged(String),
     SaveConfig,
     ToggleDictation,
+    CheckBalance,
+    BalanceReceived(Result<BillingResponse, String>),
+    TrayEvent,
+    ShowWindow,
+    HideWindow,
 }
 
 struct VoiceKeyboardGui {
     config: Config,
     api_key_input: String,
     hotkey_input: String,
+    project_id_input: String,
     is_recording: bool,
     status_message: String,
+    balance_info: String,
     voice_keyboard_process: Arc<Mutex<Option<Child>>>,
     _hotkey_manager: GlobalHotKeyManager,
     _audio_output_stream: OutputStream,
     audio_sink: Arc<Mutex<Sink>>,
+    _tray_icon: Option<TrayIcon>,
+    http_client: Client,
 }
 
 impl VoiceKeyboardGui {
@@ -83,6 +112,7 @@ impl VoiceKeyboardGui {
         let config = Config::load().unwrap_or_default();
         let api_key_input = config.api_key.clone();
         let hotkey_input = config.hotkey_code.clone();
+        let project_id_input = config.project_id.clone();
 
         // Initialize audio system
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -95,16 +125,33 @@ impl VoiceKeyboardGui {
         let hotkey = HotKey::new(None, Code::F13);
         hotkey_manager.register(hotkey).ok();
 
+        // Initialize system tray
+        let tray_menu = Menu::new();
+        let show_item = MenuItem::new("Show Window", true, None);
+        let quit_item = MenuItem::new("Quit", true, None);
+        tray_menu.append(&show_item).ok();
+        tray_menu.append(&quit_item).ok();
+
+        let tray_icon = TrayIconBuilder::new()
+            .with_menu(Box::new(tray_menu))
+            .with_tooltip("Voice Keyboard")
+            .build()
+            .ok();
+
         let gui = Self {
             config,
             api_key_input,
             hotkey_input,
+            project_id_input,
             is_recording: false,
             status_message: "Ready".to_string(),
+            balance_info: "Click 'Check Balance' to view billing info".to_string(),
             voice_keyboard_process: Arc::new(Mutex::new(None)),
             _hotkey_manager: hotkey_manager,
             _audio_output_stream: stream,
             audio_sink: Arc::new(Mutex::new(sink)),
+            _tray_icon: tray_icon,
+            http_client: Client::new(),
         };
 
         // Start hotkey listener
@@ -152,12 +199,39 @@ impl VoiceKeyboardGui {
                         // Start the voice keyboard process
                         if let Ok(api_key) = std::env::var("DEEPGRAM_API_KEY") {
                             if !api_key.is_empty() {
-                                if let Ok(child) = Command::new("pkexec")
-                                    .arg(std::env::current_exe().unwrap().parent().unwrap().join("voice-keyboard"))
-                                    .arg("--test-stt")
-                                    .env("DEEPGRAM_API_KEY", api_key)
-                                    .spawn()
-                                {
+                                let exe_path = std::env::current_exe()
+                                    .unwrap()
+                                    .parent()
+                                    .unwrap()
+                                    .join("voice-keyboard");
+
+                                let mut cmd = Command::new("pkexec");
+                                cmd.arg("env")
+                                    .arg(format!("DEEPGRAM_API_KEY={}", api_key));
+
+                                // Preserve audio session environment variables
+                                if let Ok(val) = std::env::var("PULSE_RUNTIME_PATH") {
+                                    cmd.arg(format!("PULSE_RUNTIME_PATH={}", val));
+                                }
+                                if let Ok(val) = std::env::var("XDG_RUNTIME_DIR") {
+                                    cmd.arg(format!("XDG_RUNTIME_DIR={}", val));
+                                }
+                                if let Ok(val) = std::env::var("DISPLAY") {
+                                    cmd.arg(format!("DISPLAY={}", val));
+                                }
+                                if let Ok(val) = std::env::var("WAYLAND_DISPLAY") {
+                                    cmd.arg(format!("WAYLAND_DISPLAY={}", val));
+                                }
+                                if let Ok(val) = std::env::var("HOME") {
+                                    cmd.arg(format!("HOME={}", val));
+                                }
+                                if let Ok(val) = std::env::var("USER") {
+                                    cmd.arg(format!("USER={}", val));
+                                }
+
+                                cmd.arg(&exe_path).arg("--test-stt");
+
+                                if let Ok(child) = cmd.spawn() {
                                     *process_lock = Some(child);
                                 }
                             }
@@ -214,11 +288,34 @@ impl VoiceKeyboardGui {
             .join("voice-keyboard");
 
         // Start the voice-keyboard process with pkexec for sudo privileges
-        match Command::new("pkexec")
-            .arg(&exe_path)
-            .arg("--test-stt")
-            .env("DEEPGRAM_API_KEY", &self.config.api_key)
-            .spawn()
+        // Pass through necessary environment variables for audio access
+        let mut cmd = Command::new("pkexec");
+        cmd.arg("env")
+            .arg(format!("DEEPGRAM_API_KEY={}", &self.config.api_key));
+
+        // Preserve audio session environment variables
+        if let Ok(val) = std::env::var("PULSE_RUNTIME_PATH") {
+            cmd.arg(format!("PULSE_RUNTIME_PATH={}", val));
+        }
+        if let Ok(val) = std::env::var("XDG_RUNTIME_DIR") {
+            cmd.arg(format!("XDG_RUNTIME_DIR={}", val));
+        }
+        if let Ok(val) = std::env::var("DISPLAY") {
+            cmd.arg(format!("DISPLAY={}", val));
+        }
+        if let Ok(val) = std::env::var("WAYLAND_DISPLAY") {
+            cmd.arg(format!("WAYLAND_DISPLAY={}", val));
+        }
+        if let Ok(val) = std::env::var("HOME") {
+            cmd.arg(format!("HOME={}", val));
+        }
+        if let Ok(val) = std::env::var("USER") {
+            cmd.arg(format!("USER={}", val));
+        }
+
+        cmd.arg(&exe_path).arg("--test-stt");
+
+        match cmd.spawn()
         {
             Ok(child) => {
                 *self.voice_keyboard_process.lock().unwrap() = Some(child);
@@ -250,9 +347,13 @@ impl VoiceKeyboardGui {
             Message::HotkeyChanged(value) => {
                 self.hotkey_input = value;
             }
+            Message::ProjectIdChanged(value) => {
+                self.project_id_input = value;
+            }
             Message::SaveConfig => {
                 self.config.api_key = self.api_key_input.clone();
                 self.config.hotkey_code = self.hotkey_input.clone();
+                self.config.project_id = self.project_id_input.clone();
                 match self.config.save() {
                     Ok(_) => {
                         self.status_message = "Configuration saved!".to_string();
@@ -269,6 +370,61 @@ impl VoiceKeyboardGui {
                     self.start_dictation();
                 }
             }
+            Message::CheckBalance => {
+                let api_key = self.config.api_key.clone();
+                let project_id = self.config.project_id.clone();
+                let client = self.http_client.clone();
+
+                return Task::future(async move {
+                    let url = format!("https://api.deepgram.com/v1/projects/{}/balances", project_id);
+                    let result = client
+                        .get(&url)
+                        .header("Authorization", format!("Token {}", api_key))
+                        .send()
+                        .await;
+
+                    match result {
+                        Ok(response) => {
+                            if response.status().is_success() {
+                                match response.json::<BillingResponse>().await {
+                                    Ok(billing) => Message::BalanceReceived(Ok(billing)),
+                                    Err(e) => Message::BalanceReceived(Err(format!("Parse error: {}", e))),
+                                }
+                            } else {
+                                Message::BalanceReceived(Err(format!("API error: {}", response.status())))
+                            }
+                        }
+                        Err(e) => Message::BalanceReceived(Err(format!("Request failed: {}", e))),
+                    }
+                });
+            }
+            Message::BalanceReceived(result) => {
+                match result {
+                    Ok(billing) => {
+                        if billing.balances.is_empty() {
+                            self.balance_info = "No balance information available".to_string();
+                        } else {
+                            let balance_text = billing.balances.iter()
+                                .map(|b| format!("{}: ${:.2}", b.units, b.amount))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            self.balance_info = format!("Account Balance:\n{}", balance_text);
+                        }
+                    }
+                    Err(e) => {
+                        self.balance_info = format!("Error: {}", e);
+                    }
+                }
+            }
+            Message::TrayEvent => {
+                // Handle tray events
+            }
+            Message::ShowWindow => {
+                return window::get_latest().and_then(|id| window::gain_focus(id));
+            }
+            Message::HideWindow => {
+                return window::get_latest().and_then(|id| window::minimize(id, true));
+            }
         }
         Task::none()
     }
@@ -279,6 +435,12 @@ impl VoiceKeyboardGui {
         let api_key_label = text("Deepgram API Key:");
         let api_key_field = text_input("Enter your Deepgram API key", &self.api_key_input)
             .on_input(Message::ApiKeyChanged)
+            .padding(10)
+            .size(20);
+
+        let project_id_label = text("Deepgram Project ID:");
+        let project_id_field = text_input("Enter your project ID", &self.project_id_input)
+            .on_input(Message::ProjectIdChanged)
             .padding(10)
             .size(20);
 
@@ -320,11 +482,21 @@ impl VoiceKeyboardGui {
 
         let status = text(&self.status_message).size(18);
 
+        // Billing panel
+        let billing_title = text("Billing Information").size(24);
+        let check_balance_button = button("Check Balance")
+            .on_press(Message::CheckBalance)
+            .padding(10);
+        let balance_display = text(&self.balance_info).size(16);
+
         let content: Element<_> = column![
             title,
             text("").size(10),
             api_key_label,
             api_key_field,
+            text("").size(10),
+            project_id_label,
+            project_id_field,
             text("").size(10),
             hotkey_label,
             hotkey_field,
@@ -334,6 +506,12 @@ impl VoiceKeyboardGui {
             toggle_button,
             text("").size(20),
             status,
+            text("").size(30),
+            billing_title,
+            text("").size(10),
+            check_balance_button,
+            text("").size(10),
+            balance_display,
         ]
         .padding(20)
         .spacing(5)
